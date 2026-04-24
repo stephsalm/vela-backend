@@ -102,7 +102,20 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/auth/me', requireAuth, (req, res) => res.json({ user: req.user }));
 
 // ── AI ──
-app.post('/api/ai/generate', requireAuth, async (req, res) => {
+// Guest access allowed on generate — no login required
+app.post('/api/ai/generate', async (req, res) => {
+  // Set a default guest user if no auth provided
+  if (!req.headers.authorization) {
+    req.user = { id: 'guest', email: 'guest@vela.com', name: 'Guest', tier: 'explorer' };
+  } else {
+    try {
+      const token = req.headers.authorization.split(' ')[1];
+      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'vela-dev-secret');
+      req.user = { id: decoded.userId, tier: 'premier' };
+    } catch(e) {
+      req.user = { id: 'guest', tier: 'explorer' };
+    }
+  }
   try {
     const { dreamDescription, destination, departureDate, returnDate, departureCity, adults = 2, children = 0, budget = '$10,000', tier = 'explorer', vibes = [], accommodationStyle = [], specialRequests = '' } = req.body;
     if (!destination) return res.status(400).json({ error: 'Destination is required.' });
