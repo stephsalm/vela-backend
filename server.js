@@ -288,6 +288,40 @@ app.get('/api/stripe/subscription', requireAuth, (req, res) => {
   res.json({ tier: req.user.tier, subscription: null });
 });
 
+
+// ── WAITLIST ──
+const waitlist = []; // In-memory store — replace with Supabase later
+app.post('/api/waitlist', async (req, res) => {
+  try {
+    const { email, name, source } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email required.' });
+    
+    // Save to memory
+    waitlist.push({ email, name, source, date: new Date().toISOString() });
+    console.log(`New waitlist signup: ${email} (${source})`);
+    
+    // Save to Supabase if configured
+    if (supabase) {
+      await supabase.from('waitlist').insert({ email, name, source }).catch(() => {});
+    }
+    
+    res.json({ message: 'Added to waitlist.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to add to waitlist.' });
+  }
+});
+
+// ── GET WAITLIST (admin) ──
+app.get('/api/waitlist', async (req, res) => {
+  const key = req.headers['x-admin-key'];
+  if (key !== process.env.ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized.' });
+  if (supabase) {
+    const { data } = await supabase.from('waitlist').select('*').order('created_at', { ascending: false });
+    return res.json({ waitlist: data || waitlist });
+  }
+  res.json({ waitlist });
+});
+
 // ─── START ───
 app.listen(PORT, () => {
   console.log(`✦ Vela API running on port ${PORT}`);
