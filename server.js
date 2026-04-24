@@ -173,6 +173,35 @@ app.post('/api/ai/question', requireAuth, async (req, res) => {
   }
 });
 
+
+// ── AI SIMPLE (non-streaming for mobile) ──
+app.post('/api/ai/generate-simple', async (req, res) => {
+  try {
+    const { dreamDescription, destination, departureDate, returnDate, departureCity, adults = 2, children = 0, budget = '$10,000', tier = 'explorer', vibes = [], specialRequests = '' } = req.body;
+    if (!destination) return res.status(400).json({ error: 'Destination is required.' });
+
+    const travelers = `${adults} adult${adults > 1 ? 's' : ''}${children > 0 ? `, ${children} child${children > 1 ? 'ren' : ''}` : ''}`;
+    const dates = departureDate && returnDate
+      ? `${departureDate} to ${returnDate}`
+      : 'Dates flexible';
+
+    const message = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 2500,
+      system: 'You are Vela, a world-class AI luxury travel concierge. Create detailed, beautifully written, deeply personalized travel itineraries. Use real hotel names, real restaurants, real experiences. Be specific and inspiring.',
+      messages: [{
+        role: 'user',
+        content: `Create a detailed travel itinerary:\n\nDESTINATION: ${destination}\nDATES: ${dates}\nTRAVELERS: ${travelers}\nDEPARTURE CITY: ${departureCity || 'Not specified'}\nBUDGET: ${budget}\nINTERESTS: ${vibes.join(', ') || 'Open to suggestions'}\nSPECIAL REQUESTS: ${specialRequests || 'None'}\nCLIENT DESCRIPTION: "${dreamDescription || 'Create something extraordinary.'}"\n\nWrite a deeply personalized day-by-day itinerary with real properties, real restaurants, and insider knowledge. Include an evocative opening and estimated cost breakdown.`
+      }]
+    });
+
+    res.json({ itinerary: message.content[0].text });
+  } catch (err) {
+    console.error('Simple generate error:', err);
+    res.status(500).json({ error: 'Failed to generate itinerary. Please try again.' });
+  }
+});
+
 // ── TRIPS ──
 app.get('/api/trips', requireAuth, async (req, res) => {
   try {
