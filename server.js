@@ -132,7 +132,7 @@ app.post('/api/ai/generate', async (req, res) => {
 
     const stream = await anthropic.messages.stream({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 2500,
+      max_tokens: 1500,
       system: `You are Vela, a world-class AI luxury travel concierge. Create detailed, beautifully written, deeply personalized travel itineraries. Your tone is elevated and inspiring — like a trusted friend who has traveled everywhere. Use real hotel names, real restaurants, real experiences. Be specific. Current client tier: ${req.user.tier || tier}.`,
       messages: [{
         role: 'user',
@@ -187,8 +187,8 @@ app.post('/api/ai/generate-simple', async (req, res) => {
 
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 2500,
-      system: 'You are Vela, a world-class AI luxury travel concierge. Create detailed, beautifully written, deeply personalized travel itineraries. Use real hotel names, real restaurants, real experiences. Be specific and inspiring.',
+      max_tokens: 1500,
+      system: 'You are Vela, a luxury travel concierge. Create a focused, beautifully written, personalized travel itinerary. Be specific — real hotel names, real restaurants, insider tips. Be concise but vivid. Aim for 600-800 words.',
       messages: [{
         role: 'user',
         content: `Create a detailed travel itinerary:\n\nDESTINATION: ${destination}\nDATES: ${dates}\nTRAVELERS: ${travelers}\nDEPARTURE CITY: ${departureCity || 'Not specified'}\nBUDGET: ${budget}\nINTERESTS: ${vibes.join(', ') || 'Open to suggestions'}\nSPECIAL REQUESTS: ${specialRequests || 'None'}\nCLIENT DESCRIPTION: "${dreamDescription || 'Create something extraordinary.'}"\n\nWrite a deeply personalized day-by-day itinerary with real properties, real restaurants, and insider knowledge. Include an evocative opening and estimated cost breakdown.`
