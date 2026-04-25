@@ -318,6 +318,90 @@ app.get('/api/stripe/subscription', requireAuth, (req, res) => {
 });
 
 
+
+// ── GOOGLE PLACES PHOTO ──
+app.post('/api/photos/place', async (req, res) => {
+  try {
+    const { name, type = 'hotel' } = req.body;
+    if (!name) return res.status(400).json({ error: 'Name required.' });
+    
+    const apiKey = process.env.GOOGLE_PLACES_KEY;
+    if (!apiKey) return res.status(400).json({ error: 'Google Places API not configured.' });
+
+    // Step 1: Find the place
+    const searchQuery = encodeURIComponent(name + ' ' + type);
+    const findUrl = `https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=${searchQuery}&inputtype=textquery&fields=place_id,name,photos,rating&key=${apiKey}`;
+    
+    const findRes = await fetch(findUrl);
+    const findData = await findRes.json();
+    
+    if (!findData.candidates || findData.candidates.length === 0) {
+      return res.json({ photoUrl: null, name, found: false });
+    }
+    
+    const place = findData.candidates[0];
+    
+    // Step 2: Get photo if available
+    if (place.photos && place.photos.length > 0) {
+      const photoRef = place.photos[0].photo_reference;
+      const photoUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference=${photoRef}&key=${apiKey}`;
+      return res.json({ 
+        photoUrl, 
+        name: place.name, 
+        rating: place.rating,
+        found: true,
+        place_id: place.place_id
+      });
+    }
+    
+    res.json({ photoUrl: null, name: place.name, rating: place.rating, found: true });
+  } catch (err) {
+    console.error('Places API error:', err);
+    res.status(500).json({ error: 'Photo fetch failed.' });
+  }
+});
+
+// ── BATCH PLACE PHOTOS ──
+app.post('/api/photos/batch', async (req, res) => {
+  try {
+    const { places } = req.body; // Array of {name, type}
+    if (!places || !places.length) return res.status(400).json({ error: 'Places array required.' });
+    
+    const apiKey = process.env.GOOGLE_PLACES_KEY;
+    if (!apiKey) return res.status(400).json({ error: 'Google Places API not configured.' });
+    
+    const results = [];
+    
+    for (const place of places.slice(0, 6)) { // Max 6 at a time
+      try {
+        const searchQuery = encodeURIComponent(place.name + ' ' + (place.type || 'hotel'));
+        const findUrl = `https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=${searchQuery}&inputtype=textquery&fields=place_id,name,photos,rating&key=${apiKey}`;
+        
+        const findRes = await fetch(findUrl);
+        const findData = await findRes.json();
+        
+        if (findData.candidates && findData.candidates[0]?.photos) {
+          const photoRef = findData.candidates[0].photos[0].photo_reference;
+          results.push({
+            query: place.name,
+            photoUrl: `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference=${photoRef}&key=${apiKey}`,
+            rating: findData.candidates[0].rating,
+            found: true
+          });
+        } else {
+          results.push({ query: place.name, photoUrl: null, found: false });
+        }
+      } catch (e) {
+        results.push({ query: place.name, photoUrl: null, found: false });
+      }
+    }
+    
+    res.json({ results });
+  } catch (err) {
+    res.status(500).json({ error: 'Batch photo fetch failed.' });
+  }
+});
+
 // ── WAITLIST ──
 const waitlist = []; // In-memory store — replace with Supabase later
 app.post('/api/waitlist', async (req, res) => {
@@ -349,6 +433,221 @@ app.get('/api/waitlist', async (req, res) => {
     return res.json({ waitlist: data || waitlist });
   }
   res.json({ waitlist });
+});
+
+
+// ── PHOTO SEARCH (Unsplash) ──
+app.get('/api/photos/search', async (req, res) => {
+  try {
+    const { query, count = 1 } = req.query;
+    if (!query) return res.status(400).json({ error: 'Query required.' });
+    
+    // Use Unsplash source API - no key needed for basic usage
+    const photos = [];
+    const searches = Array.isArray(query) ? query : [query];
+    
+    for (const q of searches.slice(0, 3)) {
+      const encoded = encodeURIComponent(q);
+      // Unsplash source returns a redirect to a random photo matching the query
+      const url = `https://source.unsplash.com/800x500/?${encoded}`;
+      photos.push({ query: q, url, credit: 'Unsplash' });
+    }
+    
+    res.json({ photos });
+  } catch (err) {
+    res.status(500).json({ error: 'Photo search failed.' });
+  }
+});
+
+// ── PHOTO SEARCH BY HOTEL/DESTINATION ──
+app.post('/api/photos/hotel', async (req, res) => {
+  try {
+    const { hotelName, destination } = req.body;
+    const query = hotelName ? `${hotelName} hotel` : `${destination} luxury hotel`;
+    const encoded = encodeURIComponent(query);
+    res.json({ 
+      url: `https://source.unsplash.com/800x500/?${encoded}`,
+      credit: 'Unsplash'
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed.' });
+  }
+});
+
+// ── SEND ITINERARY EMAIL ──
+app.post('/api/email/itinerary', async (req, res) => {
+  try {
+    const { email, name, destination, itineraryHtml, itineraryText } = req.body;
+    if (!email || !destination) return res.status(400).json({ error: 'Email and destination required.' });
+    
+    // Store the email request - in production this would use SendGrid/Resend
+    console.log(`Itinerary email requested: ${email} for ${destination}`);
+    
+    // For now, save to waitlist with itinerary metadata
+    if (supabase) {
+      await supabase.from('waitlist').upsert({ 
+        email, 
+        name: name || 'Vela Client',
+        source: 'itinerary_email',
+        metadata: { destination, requested_at: new Date().toISOString() }
+      }).catch(() => {});
+    }
+    
+    res.json({ 
+      message: 'Itinerary saved. We will email it to you shortly.',
+      email 
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to process email request.' });
+  }
+});
+
+// ── PRE-TRIP BRIEF ──
+app.post('/api/ai/pretrip-brief', async (req, res) => {
+  try {
+    const { destination, departureDate, returnDate, travelers, budget } = req.body;
+    if (!destination) return res.status(400).json({ error: 'Destination required.' });
+    
+    const message = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1500,
+      system: 'You are Vela, a luxury travel concierge. Generate a comprehensive pre-trip brief. Respond ONLY with valid JSON, no other text.',
+      messages: [{
+        role: 'user',
+        content: `Generate a pre-trip brief for: ${destination}
+Dates: ${departureDate || 'flexible'} to ${returnDate || 'flexible'}
+Travelers: ${travelers || 2}
+Budget: ${budget || 'luxury'}
+
+Respond with ONLY this JSON structure:
+{
+  "visa": "Visa requirements for US passport holders",
+  "currency": "Local currency, exchange rate, cash recommendations",
+  "weather": "Expected weather and what to expect",
+  "language": "Local language, useful phrases",
+  "emergency": {
+    "police": "Local police number",
+    "ambulance": "Local ambulance number", 
+    "usConsulate": "US Consulate contact"
+  },
+  "health": "Health considerations, vaccines if any",
+  "cultural": ["Cultural tip 1", "Cultural tip 2", "Cultural tip 3"],
+  "packing": {
+    "clothing": ["Item 1", "Item 2", "Item 3", "Item 4"],
+    "documents": ["Passport", "Travel insurance", "Booking confirmations"],
+    "essentials": ["Item 1", "Item 2", "Item 3"],
+    "velaRecommends": ["Insider item 1", "Insider item 2"]
+  },
+  "bestTime": "Why this time of year is good/bad for this destination",
+  "localTips": ["Tip 1", "Tip 2", "Tip 3"]
+}`
+      }]
+    });
+    
+    const text = message.content[0].text;
+    const match = text.match(/\{[\s\S]*\}/);
+    if (match) {
+      const brief = JSON.parse(match[0]);
+      res.json({ brief });
+    } else {
+      throw new Error('Invalid response format');
+    }
+  } catch (err) {
+    console.error('Pre-trip brief error:', err);
+    res.status(500).json({ error: 'Failed to generate pre-trip brief.' });
+  }
+});
+
+// ── MODIFY DAY ──
+app.post('/api/ai/modify-day', async (req, res) => {
+  try {
+    const { destination, dayNumber, dayTitle, currentContent, modificationRequest } = req.body;
+    
+    const message = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 800,
+      system: 'You are Vela, a luxury travel concierge. Regenerate a specific day of an itinerary based on a modification request. Be specific, use real places.',
+      messages: [{
+        role: 'user',
+        content: `Destination: ${destination}
+Day ${dayNumber}: ${dayTitle}
+Current plan: ${currentContent}
+Modification requested: ${modificationRequest}
+
+Rewrite just this day with the modification applied. Keep the same format with morning, afternoon, evening and specific hotel/restaurant/transfer details.`
+      }]
+    });
+    
+    res.json({ updatedDay: message.content[0].text });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to modify day.' });
+  }
+});
+
+// ── SAVE ITINERARY ──
+const savedItineraries = {}; // In-memory - replace with Supabase
+app.post('/api/itineraries/save', async (req, res) => {
+  try {
+    const { destination, occasion, dates, budget, travelers, content, email } = req.body;
+    const id = 'itin_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+    
+    savedItineraries[id] = {
+      id, destination, occasion, dates, budget, travelers, content, email,
+      created: new Date().toISOString()
+    };
+    
+    if (supabase) {
+      await supabase.from('itineraries').insert({
+        id, destination, occasion, budget, travelers, content, email,
+        created_at: new Date().toISOString()
+      }).catch(() => {});
+    }
+    
+    const shareUrl = `${process.env.FRONTEND_URL || 'https://vela-jet-gamma.vercel.app'}/vela-itinerary.html?id=${id}`;
+    res.json({ id, shareUrl, message: 'Itinerary saved.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to save itinerary.' });
+  }
+});
+
+app.get('/api/itineraries/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    if (supabase) {
+      const { data } = await supabase.from('itineraries').select('*').eq('id', id).single();
+      if (data) return res.json({ itinerary: data });
+    }
+    
+    const itin = savedItineraries[id];
+    if (!itin) return res.status(404).json({ error: 'Itinerary not found.' });
+    res.json({ itinerary: itin });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch itinerary.' });
+  }
+});
+
+// ── FEEDBACK SAVE ──
+const feedbackStore = [];
+app.post('/api/feedback', async (req, res) => {
+  try {
+    const { destination, ratings, highlights, improvements, email } = req.body;
+    
+    const entry = {
+      destination, ratings, highlights, improvements, email,
+      date: new Date().toISOString()
+    };
+    feedbackStore.push(entry);
+    console.log('Feedback received:', JSON.stringify(entry));
+    
+    if (supabase) {
+      await supabase.from('feedback').insert(entry).catch(() => {});
+    }
+    
+    res.json({ message: 'Feedback saved. Thank you.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to save feedback.' });
+  }
 });
 
 // ─── START ───
