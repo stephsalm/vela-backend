@@ -157,7 +157,7 @@ app.post('/api/ai/generate', async (req, res) => {
   }
 });
 
-app.post('/api/ai/question', requireAuth, async (req, res) => {
+app.post('/api/ai/question', async (req, res) => {
   try {
     const { question, tripContext } = req.body;
     if (!question) return res.status(400).json({ error: 'Question required.' });
