@@ -131,8 +131,8 @@ app.post('/api/ai/generate', async (req, res) => {
       : 'Dates flexible';
 
     const stream = await anthropic.messages.stream({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1500,
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1000,
       system: `You are Vela, a world-class AI luxury travel concierge. Create detailed, beautifully written, deeply personalized travel itineraries. Your tone is elevated and inspiring — like a trusted friend who has traveled everywhere. Use real hotel names, real restaurants, real experiences. Be specific. Current client tier: ${req.user.tier || tier}.`,
       messages: [{
         role: 'user',
@@ -162,7 +162,7 @@ app.post('/api/ai/question', async (req, res) => {
     const { question, tripContext } = req.body;
     if (!question) return res.status(400).json({ error: 'Question required.' });
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 500,
       system: 'You are Vela, a luxury travel concierge AI. Answer travel questions concisely and helpfully. Keep answers under 200 words.',
       messages: [{ role: 'user', content: tripContext ? `Trip context: ${tripContext}\n\nQuestion: ${question}` : question }]
@@ -186,8 +186,8 @@ app.post('/api/ai/generate-simple', async (req, res) => {
       : 'Dates flexible';
 
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1500,
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1000,
       system: 'You are Vela, a luxury travel concierge. Create a focused, beautifully written, personalized travel itinerary. Be specific — real hotel names, real restaurants, insider tips. Be concise but vivid. Aim for 600-800 words.',
       messages: [{
         role: 'user',
@@ -509,7 +509,7 @@ app.post('/api/ai/pretrip-brief', async (req, res) => {
     if (!destination) return res.status(400).json({ error: 'Destination required.' });
     
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 1500,
       system: 'You are Vela, a luxury travel concierge. Generate a comprehensive pre-trip brief. Respond ONLY with valid JSON, no other text.',
       messages: [{
@@ -564,7 +564,7 @@ app.post('/api/ai/modify-day', async (req, res) => {
     const { destination, dayNumber, dayTitle, currentContent, modificationRequest } = req.body;
     
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 800,
       system: 'You are Vela, a luxury travel concierge. Regenerate a specific day of an itinerary based on a modification request. Be specific, use real places.',
       messages: [{
